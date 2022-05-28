@@ -1,6 +1,7 @@
 package com.mumulcom.mumulcom.src.like.dao;
 
 
+import com.mumulcom.mumulcom.src.fcm.service.FcmService;
 import com.mumulcom.mumulcom.src.like.dto.PostLikeRes;
 import com.mumulcom.mumulcom.src.like.dto.PostQueLikeReq;
 
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -19,6 +21,10 @@ import java.util.Map;
 public class QuestionLikeDao {
 
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private FcmService fcmService;
+
 
     @Autowired
     public void setDataSource(DataSource dataSource){
@@ -35,7 +41,7 @@ public class QuestionLikeDao {
 
 //25.
     @Transactional(rollbackFor = Exception.class)
-    public PostLikeRes createQuestionLike(PostQueLikeReq postQueLikeReq, int status){
+    public PostLikeRes createQuestionLike(PostQueLikeReq postQueLikeReq, int status)throws IOException {
         Object[] createQueLikeParams = new Object[]{postQueLikeReq.getQuestionIdx(), postQueLikeReq.getUserIdx()};
         String result;
         Long targetUserIdx = this.jdbcTemplate.queryForObject("select q.userIdx\n" +
@@ -88,6 +94,11 @@ public class QuestionLikeDao {
 
                 this.jdbcTemplate.update(creLikNotQuery,creLikeNotParams);
 
+                String fcmToken = this.jdbcTemplate.queryForObject("select fcmToken from User\n" +
+                        "where userIdx = ?", String.class, targetUserIdx);
+                fcmService.send(fcmToken, "mumulcom", nContent);
+
+
                 return new PostLikeRes(targetUserIdx,nContent);
             case 2:
                 String changeToInactiveQuery = "update QuestionLike\n" +
@@ -120,7 +131,7 @@ public class QuestionLikeDao {
 
     //26.
     @Transactional(rollbackFor = Exception.class)
-    public PostLikeRes createReplyLike(PostReplyLikeReq postReplyLikeReq, int status){
+    public PostLikeRes createReplyLike(PostReplyLikeReq postReplyLikeReq, int status)throws IOException{
 
             Object[] creatRepLikeParams = new Object[]{postReplyLikeReq.getReplyIdx(),postReplyLikeReq.getUserIdx()};
             Long noticeTargetUserIdx = this.jdbcTemplate.queryForObject("select R.userIdx\n" +
@@ -175,6 +186,11 @@ public class QuestionLikeDao {
                             nContent};
 
                     this.jdbcTemplate.update(creLikNotQuery, creLikeNotParams);
+
+                    String fcmToken = this.jdbcTemplate.queryForObject("select fcmToken from User\n" +
+                            "where userIdx = ?", String.class, noticeTargetUserIdx);
+                    fcmService.send(fcmToken, "mumulcom", nContent);
+
                     return new PostLikeRes(noticeTargetUserIdx, nContent);
                 case 2:
                     String changeToInactiveQuery = "update ReplyLike\n" +

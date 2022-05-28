@@ -1,5 +1,6 @@
 package com.mumulcom.mumulcom.src.reply.dao;
 
+import com.mumulcom.mumulcom.src.fcm.service.FcmService;
 import com.mumulcom.mumulcom.src.reply.domain.MyReplyListRes;
 import com.mumulcom.mumulcom.src.reply.domain.ReplyInfoRes;
 
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -22,6 +24,9 @@ import java.util.List;
 public class ReplyDao {
 
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private FcmService fcmService;
 
     @Autowired
     public ReplyDao(DataSource dataSource) {
@@ -272,7 +277,7 @@ public class ReplyDao {
     //학준 18. 대답변하기
 
     @Transactional(rollbackFor = Exception.class)
-    public PostReRepRes rereply(String imgUrls, PostReReplReq postReReplReq, Long noticeTargetUserIdx) {
+    public PostReRepRes rereply(String imgUrls, PostReReplReq postReReplReq, Long noticeTargetUserIdx)throws IOException {
 
         String RereplQuery = "INSERT INTO Rereply(replyIdx, userIdx, content, imageUrl)\n" +
                 " VALUES (?, ?, ?, ?)";
@@ -291,6 +296,10 @@ public class ReplyDao {
                 "NOTICECONTENT) VALUES (?, ?, ?, ?)";
         Object[] ReReplyNotParams = new Object[]{4, questionIdx, noticeTargetUserIdx, new String("회원님이 답변한 글에 댓글이 달렸습니다")};
         this.jdbcTemplate.update(ReReplNotQuery, ReReplyNotParams);
+
+        String fcmToken = this.jdbcTemplate.queryForObject("select fcmToken from User\n" +
+                "where userIdx = ?", String.class, noticeTargetUserIdx);
+        fcmService.send(fcmToken, "mumulcom", "회원님이 답변한 글에 댓글이 달렸습니다");
         return new PostReRepRes(noticeTargetUserIdx,"회원님이 답변한 글에 댓글이 달렸습니다");
 
 
