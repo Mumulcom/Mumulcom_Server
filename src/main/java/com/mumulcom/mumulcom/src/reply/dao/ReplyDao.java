@@ -37,7 +37,7 @@ public class ReplyDao {
      * yeji 19번 API
      * 답변 생성 + 알림
      */
-    public PostReplyRes creatReply(List<String> imgUrls, PostReplyReq postReplyReq) {
+    public PostReplyRes creatReply(List<String> imgUrls, PostReplyReq postReplyReq) throws IOException {
 
         String replyImgResult;
         String createReplyQuery;
@@ -69,27 +69,20 @@ public class ReplyDao {
             replyImgResult = "이미지 삽입이 완료됐습니다.";
         }
 
-//        if(postReplyReq.getImages() != null) {
-//            for(String imgs : postReplyReq.getImages()) {
-//                String createReplyImageQuery = "insert into ReplyImage(replyIdx, url) value (?, ?)";
-//                Object[] createReplyImageParams = new Object[]{lastReplyIdx, imgs};
-//
-//                this.jdbcTemplate.update(createReplyImageQuery, createReplyImageParams);
-//            }
-//            replyImgResult = "이미지 삽입이 완료됐습니다.";
-//        }
-
         // 알림 기능
         // 1. 질문 작성자에게 알림
         // 답변 생성한 유저 닉네임 추출
         String userNickname = this.jdbcTemplate.queryForObject("SELECT nickname FROM User WHERE userIdx = ?", String.class, postReplyReq.getUserIdx());
         // 질문한 유저 인덱스 추출 (알림 대상 유저)
         Long questionUserIdx = this.jdbcTemplate.queryForObject("SELECT userIdx FROM Question WHERE questionIdx = ?", Long.class, postReplyReq.getQuestionIdx());
+        String fcmToken = this.jdbcTemplate.queryForObject("SELECT fcmToken FROM User WHERE userIdx = ?", String.class, questionUserIdx);
 
         String createReplyNoticeQuery = "INSERT INTO Notice(noticeCategoryIdx, questionIdx, userIdx, noticeContent) values (1, ?, ?, " + "'" + userNickname + "님이 회원님의 질문에 답변을 달았습니다')";
         Object[] createReplyNoticeParams = new Object[]{postReplyReq.getQuestionIdx(), questionUserIdx};
         this.jdbcTemplate.update(createReplyNoticeQuery, createReplyNoticeParams);
         String noticeReply = userNickname + "님이 회원님의 질문에 답변을 달았습니다";
+
+        fcmService.send(fcmToken, "무물컴", noticeReply);
 
         // 2. 질문을 스크랩한 유저들에게 알림
         // 스크랩한 유저 인덱스 추출 (알림 대상 유저)
@@ -100,7 +93,7 @@ public class ReplyDao {
                 postReplyReq.getQuestionIdx());
 
         String noticeScrap = null;
-        if(scrapUserIdxList.isEmpty() == false) {
+        if(!scrapUserIdxList.isEmpty()) {
             String createReplyNoticeQuery2 = "INSERT INTO Notice(noticeCategoryIdx, questionIdx, userIdx, noticeContent) values (3, ?, ?, '회원님이 스크랩한 질문에 답변이 달렸습니다')";
 
             for(Long userIdx : scrapUserIdxList) {
@@ -108,6 +101,11 @@ public class ReplyDao {
                 this.jdbcTemplate.update(createReplyNoticeQuery2, createReplyNoticeParams2);
             }
             noticeScrap = "회원님이 스크랩한 질문에 답변이 달렸습니다";
+        }
+
+        for (Long userIdx : scrapUserIdxList) {
+            fcmToken = this.jdbcTemplate.queryForObject("SELECT fcmToken FROM User WHERE userIdx = ?", String.class, userIdx);
+            fcmService.send(fcmToken, "무물컴", noticeScrap);
         }
 
         return new PostReplyRes(lastReplyIdx, replyImgResult, noticeReply, questionUserIdx, noticeScrap, scrapUserIdxList);
