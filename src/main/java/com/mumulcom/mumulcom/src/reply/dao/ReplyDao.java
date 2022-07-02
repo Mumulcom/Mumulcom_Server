@@ -1,6 +1,7 @@
 package com.mumulcom.mumulcom.src.reply.dao;
 
 import com.mumulcom.mumulcom.src.fcm.service.FcmService;
+import com.mumulcom.mumulcom.src.reply.domain.CreateNotice;
 import com.mumulcom.mumulcom.src.reply.domain.MyReplyListRes;
 import com.mumulcom.mumulcom.src.reply.domain.ReplyInfoRes;
 
@@ -23,7 +24,7 @@ import java.util.List;
 @Repository
 public class ReplyDao {
 
-    private JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate jdbcTemplate;
 
     @Autowired
     private FcmService fcmService;
@@ -37,7 +38,7 @@ public class ReplyDao {
      * yeji 19번 API
      * 답변 생성 + 알림
      */
-    public PostReplyRes creatReply(List<String> imgUrls, PostReplyReq postReplyReq) {
+    public PostReplyRes creatReply(List<String> imgUrls, PostReplyReq postReplyReq) throws IOException {
 
         String replyImgResult;
         String createReplyQuery;
@@ -69,29 +70,42 @@ public class ReplyDao {
             replyImgResult = "이미지 삽입이 완료됐습니다.";
         }
 
-//        if(postReplyReq.getImages() != null) {
-//            for(String imgs : postReplyReq.getImages()) {
-//                String createReplyImageQuery = "insert into ReplyImage(replyIdx, url) value (?, ?)";
-//                Object[] createReplyImageParams = new Object[]{lastReplyIdx, imgs};
-//
-//                this.jdbcTemplate.update(createReplyImageQuery, createReplyImageParams);
-//            }
-//            replyImgResult = "이미지 삽입이 완료됐습니다.";
-//        }
+        CreateNotice questionUser = noticeQuestionUser(postReplyReq);
+        CreateNotice scrapUser = noticeScrapUser(postReplyReq);
 
-        // 알림 기능
+        return new PostReplyRes(lastReplyIdx, replyImgResult, questionUser.getNoticeMessage(), questionUser.getUserIdx(), scrapUser.getNoticeMessage(), scrapUser.getUserIdxList());
+    }
+
+    /**
+     * yeji
+     * 1. 질문 작성자에게 알림
+     */
+    private CreateNotice noticeQuestionUser(PostReplyReq postReplyReq) throws IOException {
         // 1. 질문 작성자에게 알림
         // 답변 생성한 유저 닉네임 추출
         String userNickname = this.jdbcTemplate.queryForObject("SELECT nickname FROM User WHERE userIdx = ?", String.class, postReplyReq.getUserIdx());
         // 질문한 유저 인덱스 추출 (알림 대상 유저)
         Long questionUserIdx = this.jdbcTemplate.queryForObject("SELECT userIdx FROM Question WHERE questionIdx = ?", Long.class, postReplyReq.getQuestionIdx());
+        String fcmToken = this.jdbcTemplate.queryForObject("SELECT fcmToken FROM User WHERE userIdx = ?", String.class, questionUserIdx);
 
         String createReplyNoticeQuery = "INSERT INTO Notice(noticeCategoryIdx, questionIdx, userIdx, noticeContent) values (1, ?, ?, " + "'" + userNickname + "님이 회원님의 질문에 답변을 달았습니다')";
         Object[] createReplyNoticeParams = new Object[]{postReplyReq.getQuestionIdx(), questionUserIdx};
         this.jdbcTemplate.update(createReplyNoticeQuery, createReplyNoticeParams);
         String noticeReply = userNickname + "님이 회원님의 질문에 답변을 달았습니다";
 
-        // 2. 질문을 스크랩한 유저들에게 알림
+        fcmService.send(fcmToken, "무물컴", noticeReply);
+
+        return CreateNotice.builder()
+                .noticeMessage(noticeReply)
+                .userIdx(questionUserIdx)
+                .build();
+    }
+
+    /**
+     * yeji
+     * 2. 질문을 스크랩한 유저들에게 알림
+     */
+    private CreateNotice noticeScrapUser(PostReplyReq postReplyReq) throws IOException {
         // 스크랩한 유저 인덱스 추출 (알림 대상 유저)
         List<Long> scrapUserIdxList = new ArrayList<>();
         this.jdbcTemplate.query("SELECT userIdx FROM Scrap WHERE questionIdx = ?",
@@ -100,7 +114,7 @@ public class ReplyDao {
                 postReplyReq.getQuestionIdx());
 
         String noticeScrap = null;
-        if(scrapUserIdxList.isEmpty() == false) {
+        if(!scrapUserIdxList.isEmpty()) {
             String createReplyNoticeQuery2 = "INSERT INTO Notice(noticeCategoryIdx, questionIdx, userIdx, noticeContent) values (3, ?, ?, '회원님이 스크랩한 질문에 답변이 달렸습니다')";
 
             for(Long userIdx : scrapUserIdxList) {
@@ -110,7 +124,16 @@ public class ReplyDao {
             noticeScrap = "회원님이 스크랩한 질문에 답변이 달렸습니다";
         }
 
-        return new PostReplyRes(lastReplyIdx, replyImgResult, noticeReply, questionUserIdx, noticeScrap, scrapUserIdxList);
+        String fcmToken = "";
+        for (Long userIdx : scrapUserIdxList) {
+            fcmToken = this.jdbcTemplate.queryForObject("SELECT fcmToken FROM User WHERE userIdx = ?", String.class, userIdx);
+            fcmService.send(fcmToken, "무물컴", noticeScrap);
+        }
+
+        return CreateNotice.builder()
+                .noticeMessage(noticeScrap)
+                .userIdxList(scrapUserIdxList)
+                .build();
     }
 
     /**
@@ -294,7 +317,7 @@ public class ReplyDao {
         int questionIdx = this.jdbcTemplate.queryForObject(questionIdxQuery,int.class,postReReplReq.getReplyIdx());
         String ReReplNotQuery = "INSERT INTO Notice(NOTICECATEGORYIDX, QUESTIONIDX, USERIDX, " +
                 "NOTICECONTENT) VALUES (?, ?, ?, ?)";
-        Object[] ReReplyNotParams = new Object[]{4, questionIdx, noticeTargetUserIdx, new String("회원님이 답변한 글에 댓글이 달렸습니다")};
+        Object[] ReReplyNotParams = new Object[]{4, questionIdx, noticeTargetUserIdx, "회원님이 답변한 글에 댓글이 달렸습니다"};
         this.jdbcTemplate.update(ReReplNotQuery, ReReplyNotParams);
 
         String fcmToken = this.jdbcTemplate.queryForObject("select fcmToken from User\n" +
