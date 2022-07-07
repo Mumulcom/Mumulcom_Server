@@ -397,10 +397,12 @@ public class ReplyDao {
      * 채택된 답변에 대한 알림 생성
      * "회원님이 한 답변이 채택되었습니다."
      * */
-    public int addAdoptionNotice (ReplyInfoRes replyInfoRes, String content) {
+    public int addAdoptionNotice (ReplyInfoRes replyInfoRes, String content) throws IOException {
         String adoptionNoticeQuery = "insert into Notice (NoticeCategoryIdx, questionIdx, userIdx, noticeContent) values (6,?,?,?)";
         Object[] adoptionNoticeParams = new Object[] {replyInfoRes.getQuestionIdx(), replyInfoRes.getAnswerer(), content};
         this.jdbcTemplate.update(adoptionNoticeQuery, adoptionNoticeParams);
+        String fcmToken = this.jdbcTemplate.queryForObject("SELECT fcmToken FROM User WHERE userIdx = ?", String.class, replyInfoRes.getAnswerer());
+        fcmService.send(fcmToken,"무물컴",content);
         String lastInsertNoticeIdx = "select last_insert_id()";
         return this.jdbcTemplate.queryForObject(lastInsertNoticeIdx, int.class); // 해당 쿼리문의 결과 마지막으로 삽인된 유저의 userIdx번호를 반환한다.
 
